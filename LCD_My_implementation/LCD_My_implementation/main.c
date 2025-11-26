@@ -9,6 +9,8 @@
 
 #include <avr/io.h>
 #include <util/delay.h>
+#include <string.h>
+
 
 #define LCD_PORT PORTD
 
@@ -22,11 +24,13 @@
 int cursor_ind = 0;
 
 void LCD_init(){
+	
 	LCD_Command(0x02); // Initialize LCD in 4-bit mode
 	LCD_Command(0x28); // 2 line, 5x7 matrix
 	LCD_Command(0x0D); // Display on, cursor off
 	LCD_Command(0x06); // Increment cursor
 	LCD_Command(0x01); // Clear display
+	
 	
 	_delay_ms(20); // arbitary delay
 }
@@ -99,28 +103,66 @@ void LCD_Clear(){
 	cursor_ind = 0;
 }
 
+int ADC_Read()
+{
+	int Ain,AinLow;
+
+	ADCSRA |= (1<<ADSC);		/* Start conversion */
+	while((ADCSRA&(1<<ADIF))==0);	/* Monitor end of conversion interrupt */
+	
+	_delay_us(10);
+	AinLow = (int)ADCL;		/* Read lower byte*/
+	Ain = (int)ADCH*256;		/* Read higher 2 bits and 
+					Multiply with weight */
+	Ain = Ain + AinLow;				
+	return(Ain);			/* Return digital value*/
+}
+
+void int_to_str(int N, char *str){
+	int i=0;
+	
+	while(N > 0){
+		str[i++] = N%10 + 48;
+		N/=10;
+	}
+	str[i] = '\0';
+	
+	for(int j = 0, k = i - 1; j < k; j++, k--){
+		char temp = str[j];
+		str[j] = str[k];
+		str[k] = temp;
+	}
+	
+}
+
+//3906 steps
 
 int main(void)
 {
     
 	DDRD = 0xFF;
+	DDRC |= (1 << DDRC0);
+	ADMUX |= (1 << MUX2) | (1 << MUX0);
+	ADCSRA |= (1 << ADEN);
+	
+	
+	
 	LCD_PORT &= ~(1 << ENABLE_PIN); // make the enable pin hign
 	_delay_ms(10);
 	LCD_init();
+	int volt,c;
+	char s[5];
 	
-	
-	
+
 	
     while (1) 
     {
-		lcd_string("hello",1);
-		lcd_string("World :)",2);
-		_delay_ms(5000);
 		LCD_Clear();
-		lcd_string("This is a",1);
-		lcd_string("Test",2);
-		_delay_ms(5000);
-		LCD_Clear();
+		volt = ADC_Read();
+		int_to_str(volt,s);
+		lcd_string(s,1);
+		_delay_ms(500);
+		
     }
 }
 
