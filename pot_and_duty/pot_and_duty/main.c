@@ -6,64 +6,64 @@
  */ 
 #define F_CPU 4000000UL
 
-#include <avr/io.h>
-#include<avr/iom8a.h>
+
+#include<avr/io.h>
 #include<util/delay.h>
+#include <usart.h>
 #include <string.h>
 
-#define BAUD_PRESCALE (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
+#include <stdlib.h>
+
+#define SIZE 10
 
 
-void USART_Init(long USART_BAUDRATE){
-	UBRRL = BAUD_PRESCALE;			/* Load lower 8-bits of the baud rate */
-	UBRRH = (BAUD_PRESCALE >> 8);
-	UCSRB |= (1 << RXEN) | (1 << TXEN);	/* Turn on transmission and reception */
-	UCSRC |= (1 << URSEL) | (1 << UCSZ0) | (1 << UCSZ1);/* Use 8-bit char size */
-	
+
+
+int compare(const void* a, const void* b)
+{
+	return (*(int*)a - *(int*)b);
 }
 
-void USART_Flush(void){
-	unsigned char dummy;
-	while(UCSRA & (1 << RXC)) dummy = UDR;
-}
+int mod(int* a, int n){
+	qsort(a, n, sizeof(int), compare);
+	int mode = a[0];
+	int curr_count = 1;
+	int max_count = 1;
 
-unsigned char USART_Receive(void){
-	while ((UCSRA & (1 << RXC)) == 0);/* Wait till data is received */
-	return(UDR);
-}
-
-void USART_Transmit(char data){
-	while(!(UCSRA & (1 << UDRE)));
-	UDR = data;
-}
-
-void USART_Send_str(char* str){
-	for(int i=0;str[i] != '\0';i++){
-		USART_Transmit(str[i]);
-		_delay_ms(2);
+	// Iterate through the sorted array to find the mode
+	for (int i = 1; i < n; ++i) {
+		if (a[i] == a[i - 1]) {
+			// Increment the count if the current element is
+			// equal to the previous one
+			++curr_count;
+		}
+		else {
+			// Check if the count of the previous element is
+			// greater than the maximum count
+			if (curr_count > max_count) {
+				max_count = curr_count;
+				mode = a[i - 1];
+			}
+			// Reset the count for the current element
+			curr_count = 1;
+		}
 	}
-}
 
-void USART_Receive_str(char* str){
-	char c;
-	int i=0;
-	while((c = USART_Receive()) != '\n'){
-		str[i++]= c;
-	}
-}
-
-void save_str(char* s){
-	char c;
-	int i=0;
-	while((c = USART_Receive()) != '\r'){
-		s[i++] = c;
-	}
-	s[i] = '\0';
+	// Check the count of the last element
+	if (curr_count > max_count) {
+		mode = a[n - 1];
+	}	
+	return (int)mode;
 }
 
 void int_to_str(int N, char *str){
 	int i=0;
-	
+	int sign = 0;
+	if (N < 0){
+		str[i++] = '-';
+		N=N*-1;
+		
+	}
 	while(N > 0){
 		str[i++] = N%10 + 48;
 		N/=10;
@@ -78,56 +78,62 @@ void int_to_str(int N, char *str){
 	
 }
 
+int get_val(void){
+	unsigned int t1;
+	unsigned int t2;
+	
+	TCCR1A = 0;
+	TIFR |=(1<<ICF1);
+	TCCR1B = 0x41;
+	PORTD |= (1 << PORTD7);
+	_delay_us(10);
+	PORTD &= (0 << PORTD7);
+	while((TIFR&(1<<ICF1))==0);
+	t1 = ICR1;
+	TIFR |= (1 <<ICF1);
+	
+	TCCR1B = 0x01;
+	while((TIFR&(1<<ICF1))==0);
+	t2 = ICR1;
+	
+	double time_dur = ((t2-t1)/4)/58.0;
+	double pwm = time_dur*(-14.16) + 354.12;
+	
+	
+	return (int)pwm;
+	
+}
+
 
 
 int main(void)
 {
-	DDRB |= (1 << DDRB1);	
-	DDRD |= (1 << DDRD7)|(1<<DDRD1);
+	DDRB |= (1 << DDRB3);	
+	DDRD |= (1 << DDRD7)|(1 << DDRD1);
 	
 	USART_Init(9600);
 
-
-	unsigned int t1;
-	unsigned int t2;
 	
-	
-	//TCCR1A |= (1<<COM1A1)|(1<<COM1A0)|(1 << WGM10);
-	//TCCR1B |= (1<<WGM12);
 	PORTD &= (0 << PORTD7);
+	int pwm = 2;
 	char str[10];
+	int vals[SIZE];
+	OCR2 = 100;
+	TCCR2 |= (1 << WGM21)|(1<<WGM20)|(1<<COM21)|(1<<CS22);
     while (1) 
-    {
-		TCCR1A = 0;
-		TIFR |=(1<<ICF1);
-		TCCR1B = 0x41;
-		PORTD |= (1 << PORTD7);
-		_delay_us(10);
-		PORTD &= (0 << PORTD7);
-		while((TIFR&(1<<ICF1))==0);
-		t1 = ICR1;
-		TIFR |= (1 <<ICF1);
-		
-		TCCR1B = 0x01;
-		while((TIFR&(1<<ICF1))==0);
-		t2 = ICR1;
-		
-		double time_dur = (t2-t1)/4;	
-		time_dur =255 - time_dur * (255.0/2800);
-		if(time_dur <= 0)
-			time_dur = 1;
-		/*
-		int_to_str((int)time_dur,str);
-		strcat(str,"\r\n");
-		USART_Send_str(str);
-		*/
-		
-		TCCR1A |= (1<<COM1A1)|(1<<COM1A0)|(1 << WGM10);
-		TCCR1B |= (1<<WGM12);
-		OCR1A = time_dur;
-	
-		
-		_delay_ms(100);
+    {	
+		for(int i=0;i<SIZE;i++){
+			vals[i] = get_val();
+			_delay_ms(200);
+		}
+		pwm = mod(vals,SIZE);
+		if(pwm > 248){
+			pwm = 248;
+		}
+		if(pwm < 8){
+			pwm = 8;
+		}
+		OCR2 = pwm;
 		
     }
 }
